@@ -1,0 +1,17 @@
+# Sensitive Environment Credentials
+.env
+.env.local
+.env.*.local
+*.env
+credentials.json
+supabase/.temp/
+
+# OS Metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs & IDE Preferences
+*.log
+.vscode/
+.idea/
