@@ -5,10 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#0b1120" media="(prefers-color-scheme: dark)">
-    <title>Daily Planner & Activity Report</title>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Daily Planner</title>
     <!-- Supabase SDK for Cloud Database & Auth -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <!-- jsPDF for Client-Side PDF Export -->
+    <!-- jsPDF for PDF Export -->
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
     <style>
         :root {
@@ -39,6 +41,9 @@
             --radius-sm: 6px;
             --radius-md: 10px;
             --radius-lg: 14px;
+            --transition-colors: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+            --transition-transform: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            --transition-shadow: box-shadow 0.15s ease;
         }
         body.dark-theme {
             --bg-main: #0b1120;
@@ -59,268 +64,791 @@
             --shadow-md: 0 2px 8px -2px rgb(0 0 0 / 0.4);
             --shadow-lg: 0 8px 24px -4px rgb(0 0 0 / 0.5);
         }
+        html { color-scheme: light; }
+        body.dark-theme { color-scheme: dark; }
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        html { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; -webkit-text-size-adjust: 100%; -webkit-font-smoothing: antialiased; }
-        body { background-color: var(--bg-main); color: var(--text-main); display: flex; min-height: 100vh; line-height: 1.5; transition: background-color 0.2s ease, color 0.2s ease; }
+        html {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            -webkit-text-size-adjust: 100%;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            text-rendering: optimizeLegibility;
+        }
+        body {
+            background-color: var(--bg-main);
+            color: var(--text-main);
+            display: flex;
+            min-height: 100vh;
+            min-height: 100dvh;
+            overflow-x: hidden;
+            line-height: 1.5;
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
         button, input, select, textarea { font-family: inherit; font-size: inherit; }
+        img { max-width: 100%; height: auto; display: block; }
+        a { color: var(--primary); text-decoration: none; }
+        :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
         .app-container { display: flex; width: 100%; min-height: 100vh; position: relative; }
-        .sidebar { width: 250px; background-color: var(--bg-sidebar); color: var(--text-sidebar); display: flex; flex-direction: column; padding: 1rem 0.75rem; position: fixed; height: 100vh; z-index: 50; transition: transform 0.25s ease; border-right: 1px solid rgba(255, 255, 255, 0.06); }
+        .sidebar-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(15, 23, 42, 0.5); backdrop-filter: blur(4px);
+            z-index: 40; opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+        }
+        .sidebar-overlay.active { opacity: 1; pointer-events: auto; }
+        .sidebar {
+            width: 250px; background-color: var(--bg-sidebar); color: var(--text-sidebar);
+            display: flex; flex-direction: column; padding: 1rem 0.75rem; position: fixed;
+            height: 100vh; height: 100dvh; z-index: 50; transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            border-right: 1px solid rgba(255, 255, 255, 0.06); overflow-y: auto; overscroll-behavior: contain;
+        }
         .brand { display: flex; align-items: center; justify-content: space-between; padding: 0 0.25rem 1.15rem 0.25rem; border-bottom: 1px solid rgba(255, 255, 255, 0.1); margin-bottom: 1rem; }
-        .brand-logo { width: 32px; height: 32px; background: var(--primary); border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 0.85rem; }
-        .brand-text { font-size: 0.88rem; font-weight: 700; color: white; }
-        .brand-subtitle { font-size: 0.58rem; color: var(--text-sidebar); text-transform: uppercase; }
+        .brand-header-wrap { display: flex; align-items: center; gap: 0.65rem; }
+        .brand-logo { width: 32px; height: 32px; background: var(--primary); border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 0.85rem; border: 1px solid rgba(255, 255, 255, 0.15); flex-shrink: 0; }
+        .brand-text { font-size: 0.88rem; font-weight: 700; color: white; letter-spacing: -0.02em; line-height: 1.2; }
+        .brand-subtitle { font-size: 0.58rem; color: var(--text-sidebar); text-transform: uppercase; letter-spacing: 0.06em; }
+        .sidebar-close-btn { display: none; background: transparent; border: none; color: white; font-size: 1.25rem; cursor: pointer; padding: 0.25rem; }
         .nav-list { list-style: none; display: flex; flex-direction: column; gap: 0.35rem; flex: 1; }
-        .nav-item button { width: 100%; display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.7rem; border-radius: var(--radius-sm); border: none; background: transparent; color: var(--text-sidebar); font-size: 0.82rem; font-weight: 500; cursor: pointer; text-align: left; }
+        .nav-item button {
+            width: 100%; display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.7rem;
+            border-radius: var(--radius-sm); border: none; background: transparent; color: var(--text-sidebar);
+            font-size: 0.82rem; font-weight: 500; cursor: pointer; transition: background-color 0.15s ease, color 0.15s ease;
+            text-align: left; min-height: 36px; touch-action: manipulation;
+        }
+        .nav-item button:hover { background-color: rgba(255, 255, 255, 0.08); color: white; }
         .nav-item.active button { background-color: var(--primary); color: white; font-weight: 600; }
+        .nav-icon { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .sidebar-footer { padding-top: 1rem; border-top: 1px solid rgba(255, 255, 255, 0.1); display: flex; flex-direction: column; gap: 0.75rem; }
+        .user-card { display: flex; align-items: center; gap: 0.55rem; padding: 0.4rem; border-radius: var(--radius-sm); background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.06); }
+        .user-avatar { width: 32px; height: 32px; border-radius: var(--radius-sm); background: var(--primary); color: white; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 0.78rem; flex-shrink: 0; }
+        .user-info { overflow: hidden; }
+        .user-name { font-size: 0.78rem; font-weight: 600; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .user-role { font-size: 0.68rem; color: var(--text-sidebar); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .auth-toggle-btn {
+            background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.12); color: white; font-size: 0.75rem;
+            padding: 0.5rem; border-radius: var(--radius-sm); cursor: pointer; text-align: center; font-weight: 600;
+            transition: background-color 0.15s ease; display: flex; align-items: center; justify-content: center; gap: 0.35rem; min-height: 36px;
+        }
         .main-wrapper { margin-left: 250px; flex: 1; display: flex; flex-direction: column; min-width: 0; width: 100%; }
-        .top-header { background-color: var(--bg-card); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 0.6rem 1rem; position: sticky; top: 0; z-index: 30; }
-        .header-title { font-size: 1rem; font-weight: 700; color: var(--text-main); }
+        .top-header {
+            background-color: var(--bg-card); border-bottom: 1px solid var(--border-color); display: flex; align-items: center;
+            justify-content: space-between; padding: 0.6rem 1rem; position: sticky; top: 0; z-index: 30; gap: 0.5rem;
+            backdrop-filter: blur(8px); background-color: rgba(255, 255, 255, 0.85);
+        }
+        body.dark-theme .top-header { background-color: rgba(11, 17, 32, 0.85); }
+        .header-left-group { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
+        .mobile-hamburger { display: none; background: var(--bg-main); border: 1px solid var(--border-color); color: var(--text-main); border-radius: var(--radius-sm); width: 38px; height: 38px; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
+        .header-title-area { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+        .header-title { font-size: 1rem; font-weight: 700; color: var(--text-main); letter-spacing: -0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .date-navigator { display: inline-flex; align-items: center; gap: 0.15rem; background: var(--bg-main); padding: 0.15rem 0.25rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); }
-        .date-btn { background: none; border: none; width: 28px; height: 28px; border-radius: var(--radius-sm); cursor: pointer; color: var(--text-muted); font-size: 0.75rem; }
-        .current-date-input { border: none; background: transparent; font-weight: 600; font-size: 0.8rem; color: var(--text-main); cursor: pointer; outline: none; }
-        .btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; padding: 0.45rem 0.75rem; border-radius: var(--radius-sm); font-size: 0.8rem; font-weight: 600; cursor: pointer; border: 1px solid transparent; min-height: 34px; }
+        .date-btn { background: none; border: none; width: 28px; height: 28px; border-radius: var(--radius-sm); cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 0.75rem; }
+        .date-btn:hover { background: var(--bg-card); color: var(--text-main); }
+        .current-date-input { border: none; background: transparent; font-weight: 600; font-size: 0.8rem; color: var(--text-main); cursor: pointer; padding: 0.15rem 0.25rem; outline: none; }
+        .header-actions { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+        .save-status-indicator { font-size: 0.68rem; font-weight: 600; color: var(--success); background: var(--success-light); padding: 0.2rem 0.4rem; border-radius: var(--radius-sm); border: 1px solid rgba(5, 150, 105, 0.2); display: inline-flex; align-items: center; gap: 0.25rem; opacity: 0; transition: opacity 0.2s ease; white-space: nowrap; }
+        .save-status-indicator.visible { opacity: 1; }
+        .mode-banner { background: var(--warning-light); border-bottom: 1px solid var(--border-color); color: var(--warning); padding: 0.4rem 1rem; font-size: 0.72rem; font-weight: 600; display: flex; align-items: center; justify-content: space-between; }
+        .btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; padding: 0.45rem 0.75rem; border-radius: var(--radius-sm); font-size: 0.8rem; font-weight: 600; cursor: pointer; border: 1px solid transparent; white-space: nowrap; min-height: 34px; user-select: none; }
+        .btn:active { transform: scale(0.97); }
         .btn-primary { background-color: var(--primary); color: white; }
+        .btn-primary:hover { background-color: var(--primary-hover); box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3); }
         .btn-secondary { background-color: var(--bg-card); border-color: var(--border-color); color: var(--text-main); }
+        .btn-secondary:hover { background-color: var(--bg-main); border-color: var(--border-hover); }
+        .btn-success { background-color: var(--success); color: white; }
+        .btn-danger { background-color: var(--danger); color: white; }
         .btn-sm { padding: 0.3rem 0.55rem; font-size: 0.72rem; min-height: 28px; }
         .content-area { padding: 1rem; flex: 1; }
+        .kpi-controls-bar { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 0.6rem 0.85rem; margin-bottom: 0.85rem; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; box-shadow: var(--shadow-sm); }
+        .kpi-scope-btn { background: transparent; border: none; color: var(--text-muted); font-size: 0.75rem; font-weight: 600; padding: 0.3rem 0.6rem; border-radius: var(--radius-sm); cursor: pointer; }
+        .kpi-scope-btn.active { background: var(--primary); color: white; }
         .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.65rem; margin-bottom: 1rem; }
-        .kpi-card { background: var(--bg-card); border-radius: var(--radius-md); padding: 0.8rem 0.9rem; border: 1px solid var(--border-color); box-shadow: var(--shadow-sm); display: flex; align-items: center; justify-content: space-between; }
-        .kpi-info-title { font-size: 0.68rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; }
-        .kpi-value { font-size: 1.2rem; font-weight: 700; }
-        .controls-bar { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 0.65rem; margin-bottom: 0.85rem; display: flex; flex-direction: column; gap: 0.5rem; }
-        .search-box input { width: 100%; padding: 0.5rem 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background-color: var(--bg-card); color: var(--text-main); font-size: 0.82rem; outline: none; }
-        .task-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 0.7rem 0.85rem; display: flex; gap: 0.65rem; margin-bottom: 0.5rem; }
-        .task-title { font-size: 0.85rem; font-weight: 600; }
-        .report-paper { background: #ffffff; border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 1rem; font-family: monospace; font-size: 0.75rem; line-height: 1.5; white-space: pre-wrap; max-height: 40vh; overflow-y: auto; }
+        .kpi-card { background: var(--bg-card); border-radius: var(--radius-md); padding: 0.8rem 0.9rem; border: 1px solid var(--border-color); box-shadow: var(--shadow-sm); display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+        .kpi-card:hover { box-shadow: var(--shadow-md); border-color: var(--border-hover); }
+        .kpi-info-title { font-size: 0.68rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.15rem; }
+        .kpi-value { font-size: 1.2rem; font-weight: 700; color: var(--text-main); line-height: 1.1; font-variant-numeric: tabular-nums; }
+        .kpi-subtext { font-size: 0.68rem; color: var(--text-muted); margin-top: 0.15rem; }
+        .kpi-icon { width: 36px; height: 36px; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-color); flex-shrink: 0; }
+        .kpi-icon.blue { background: var(--primary-light); color: var(--primary); }
+        .kpi-icon.green { background: var(--success-light); color: var(--success); }
+        .kpi-icon.amber { background: var(--warning-light); color: var(--warning); }
+        .kpi-icon.purple { background: var(--info-light); color: var(--info); }
+        .controls-bar { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 0.65rem; margin-bottom: 0.85rem; display: flex; flex-direction: column; gap: 0.5rem; box-shadow: var(--shadow-sm); }
+        .search-box { position: relative; width: 100%; }
+        .search-box input { width: 100%; padding: 0.5rem 0.75rem 0.5rem 2rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background-color: var(--bg-card); color: var(--text-main); font-size: 0.82rem; outline: none; min-height: 36px; }
+        .search-icon { position: absolute; left: 0.6rem; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none; display: flex; align-items: center; }
+        .filter-group { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 0.4rem; width: 100%; }
+        .filter-select { padding: 0.45rem 0.55rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background-color: var(--bg-card); color: var(--text-main); font-size: 0.78rem; font-weight: 500; outline: none; cursor: pointer; min-height: 34px; width: 100%; }
+        .gps-btn { background: var(--primary-light); border: 1px solid var(--primary); color: var(--primary); font-size: 0.72rem; font-weight: 600; padding: 0.35rem 0.55rem; border-radius: var(--radius-sm); cursor: pointer; display: inline-flex; align-items: center; gap: 0.3rem; white-space: nowrap; min-height: 30px; }
+        .location-input-wrap { display: flex; gap: 0.35rem; align-items: stretch; }
+        .location-input-wrap .form-control { flex: 1; min-width: 0; }
+        .offline-banner { background: var(--danger-light); border-bottom: 1px solid var(--border-color); color: var(--danger); padding: 0.35rem 1rem; font-size: 0.7rem; font-weight: 600; display: none; align-items: center; justify-content: center; gap: 0.4rem; }
+        .offline-banner.visible { display: flex; }
+        .offline-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--danger); }
+        .sync-badge { font-size: 0.62rem; font-weight: 700; background: var(--warning); color: white; padding: 0.1rem 0.35rem; border-radius: 10px; margin-left: 0.3rem; }
+        .task-list-container { display: flex; flex-direction: column; gap: 0.5rem; }
+        .task-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 0.7rem 0.85rem; display: flex; gap: 0.65rem; align-items: flex-start; }
+        .task-card.completed { border-left: 3px solid var(--success); background: rgba(5, 150, 105, 0.02); }
+        .task-card.in-progress { border-left: 3px solid var(--warning); }
+        .task-card.pending { border-left: 3px solid var(--primary); }
+        .task-card.postponed { border-left: 3px solid var(--danger); }
+        .task-checkbox { width: 22px; height: 22px; border-radius: var(--radius-sm); border: 2px solid var(--border-hover); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 0.1rem; }
+        .task-checkbox.checked { background-color: var(--success); border-color: var(--success); color: white; }
+        .task-content-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+        .task-main-details { cursor: pointer; display: flex; flex-direction: column; gap: 0.3rem; }
+        .task-header-row { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+        .task-title { font-size: 0.85rem; font-weight: 600; color: var(--text-main); word-break: break-word; line-height: 1.3; }
+        .task-card.completed .task-title { text-decoration: line-through; color: var(--text-muted); }
+        .badge { display: inline-flex; align-items: center; padding: 0.1rem 0.35rem; border-radius: 4px; font-size: 0.62rem; font-weight: 600; text-transform: uppercase; border: 1px solid var(--border-color); }
+        .badge-cat { background: var(--bg-main); color: var(--text-muted); }
+        .badge-prio-high { background: var(--danger-light); color: var(--danger); }
+        .badge-prio-med { background: var(--warning-light); color: var(--warning); }
+        .badge-prio-low { background: var(--info-light); color: var(--info); }
+        .task-meta-row { display: flex; align-items: center; gap: 0.6rem; font-size: 0.72rem; color: var(--text-muted); flex-wrap: wrap; }
+        .task-meta-item { display: inline-flex; align-items: center; gap: 0.2rem; }
+        .task-actions { display: flex; align-items: center; gap: 0.3rem; margin-top: 0.2rem; flex-wrap: wrap; }
+        .icon-btn { background: transparent; border: 1px solid var(--border-color); width: 30px; height: 30px; border-radius: var(--radius-sm); cursor: pointer; color: var(--text-muted); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .icon-btn:hover { background-color: var(--bg-main); color: var(--text-main); }
+        .icon-btn.danger:hover { background-color: var(--danger-light); color: var(--danger); }
+        .proof-thumbnail { width: 30px; height: 30px; border-radius: var(--radius-sm); object-fit: cover; border: 1px solid var(--border-color); cursor: pointer; flex-shrink: 0; }
+        .calendar-container { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 0.85rem; }
+        .calendar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; gap: 0.4rem; }
+        .calendar-title { font-size: 0.95rem; font-weight: 700; }
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.2rem; text-align: center; }
+        .calendar-day-head { font-size: 0.65rem; font-weight: 700; color: var(--text-muted); padding: 0.25rem 0; text-transform: uppercase; }
+        .calendar-cell { min-height: 52px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.2rem; display: flex; flex-direction: column; justify-content: space-between; align-items: flex-start; cursor: pointer; background: var(--bg-card); }
+        .calendar-cell.other-month { opacity: 0.3; background: var(--bg-main); }
+        .calendar-cell.active-day { border: 2px solid var(--primary); background: var(--primary-light); }
+        .calendar-date-num { font-weight: 700; font-size: 0.7rem; color: var(--text-main); }
+        .calendar-day-badges { display: flex; flex-direction: column; gap: 0.1rem; width: 100%; }
+        .cal-task-pill { font-size: 0.55rem; padding: 0.03rem 0.15rem; border-radius: 2px; background: var(--primary-light); color: var(--primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; font-weight: 600; }
+        .report-history-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.65rem; }
+        .report-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 0.8rem; display: flex; flex-direction: column; justify-content: space-between; gap: 0.6rem; }
+        .report-card-date { font-size: 0.85rem; font-weight: 700; color: var(--text-main); }
+        .media-gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.75rem; }
+        .media-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); overflow: hidden; display: flex; flex-direction: column; }
+        .media-card-img-wrap { width: 100%; height: 120px; background: var(--bg-main); cursor: pointer; overflow: hidden; }
+        .media-card-img-wrap img { width: 100%; height: 100%; object-fit: cover; }
+        .media-card-body { padding: 0.6rem; display: flex; flex-direction: column; gap: 0.15rem; flex: 1; }
+        .media-card-title { font-size: 0.75rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .media-card-meta { font-size: 0.65rem; color: var(--text-muted); }
+        .media-card-footer { padding: 0.4rem 0.6rem; border-top: 1px solid var(--border-color); background: var(--bg-main); }
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 100; opacity: 0; pointer-events: none; transition: opacity 0.2s ease; padding: 0.75rem; }
+        .modal-overlay.active { opacity: 1; pointer-events: auto; }
+        .modal-container { background: var(--bg-card); border-radius: var(--radius-lg); width: 100%; max-width: 560px; max-height: 90vh; max-height: 90dvh; display: flex; flex-direction: column; box-shadow: var(--shadow-lg); color: var(--text-main); border: 1px solid var(--border-color); overflow: hidden; }
+        .modal-header { padding: 0.85rem 1rem; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; background: var(--bg-card); flex-shrink: 0; }
+        .modal-title { font-size: 0.9rem; font-weight: 700; }
+        .modal-body { padding: 1rem; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+        .modal-footer { padding: 0.6rem 1rem; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end; gap: 0.4rem; background: var(--bg-main); flex-shrink: 0; flex-wrap: wrap; }
+        .detail-row { margin-bottom: 0.6rem; display: flex; flex-direction: column; gap: 0.1rem; }
+        .detail-label { font-size: 0.65rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+        .detail-val { font-size: 0.82rem; font-weight: 500; }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+        .form-group { display: flex; flex-direction: column; gap: 0.2rem; margin-bottom: 0.6rem; }
+        .form-group.full-width { grid-column: 1 / -1; }
+        .form-label { font-size: 0.75rem; font-weight: 600; }
+        .form-control { padding: 0.5rem 0.6rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background-color: var(--bg-card); color: var(--text-main); font-size: 16px; outline: none; width: 100%; min-height: 38px; }
+        textarea.form-control { min-height: 72px; font-size: 15px; resize: vertical; }
+        .file-upload-box { border: 1px dashed var(--border-hover); border-radius: var(--radius-sm); padding: 0.7rem; text-align: center; cursor: pointer; background: var(--bg-main); color: var(--text-muted); display: flex; align-items: center; justify-content: center; gap: 0.4rem; font-size: 0.78rem; min-height: 40px; }
+        .file-upload-preview { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.5rem; }
+        .file-upload-img { width: 42px; height: 42px; border-radius: var(--radius-sm); object-fit: cover; border: 1px solid var(--border-color); }
+        .report-paper { background: #ffffff; border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 1rem; font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace; font-size: 0.75rem; line-height: 1.5; color: #0f172a; white-space: pre-wrap; max-height: 40vh; overflow-y: auto; }
         body.dark-theme .report-paper { background: #0b1120; color: #f1f5f9; }
-        .mode-banner { background: var(--info-light); border-bottom: 1px solid var(--border-color); color: var(--primary); padding: 0.4rem 1rem; font-size: 0.72rem; font-weight: 600; display: flex; justify-content: space-between; }
+        .toast-container { position: fixed; bottom: 0.75rem; right: 0.75rem; left: 0.75rem; display: flex; flex-direction: column; gap: 0.35rem; z-index: 200; pointer-events: none; }
+        .toast { background: var(--bg-sidebar); color: white; padding: 0.6rem 0.85rem; border-radius: var(--radius-sm); font-size: 0.78rem; box-shadow: var(--shadow-lg); display: flex; align-items: center; gap: 0.5rem; pointer-events: auto; max-width: 360px; margin-left: auto; }
+        .toast.success { border-left: 3px solid var(--success); }
+        .toast.error { border-left: 3px solid var(--danger); }
+        .empty-state { text-align: center; padding: 2rem 0.85rem; background: var(--bg-card); border-radius: var(--radius-md); border: 1px solid var(--border-color); }
+        .empty-icon { font-size: 1.75rem; color: var(--text-muted); margin-bottom: 0.4rem; display: inline-flex; }
+        .empty-title { font-size: 0.9rem; font-weight: 700; margin-bottom: 0.2rem; }
+        .empty-desc { font-size: 0.75rem; color: var(--text-muted); max-width: 300px; margin: 0 auto 0.75rem auto; }
+        .analytics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.85rem; }
+        .chart-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 0.9rem; }
+        .chart-title { font-size: 0.82rem; font-weight: 700; margin-bottom: 0.7rem; }
+        .bar-chart-row { margin-bottom: 0.6rem; }
+        .bar-chart-label { display: flex; justify-content: space-between; font-size: 0.72rem; font-weight: 600; margin-bottom: 0.15rem; }
+        .progress-bar-bg { width: 100%; height: 5px; background-color: var(--bg-main); border-radius: var(--radius-sm); overflow: hidden; border: 1px solid var(--border-color); }
+        .progress-bar-fill { height: 100%; background-color: var(--primary); }
+        .tab-view { display: none; }
+        .tab-view.active { display: block; }
+        .template-item-card { background: var(--bg-main); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.6rem; display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; gap: 0.4rem; }
+        .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.85rem; flex-wrap: wrap; gap: 0.5rem; }
+        .section-title { font-size: 0.95rem; font-weight: 700; }
+        .section-desc { font-size: 0.72rem; color: var(--text-muted); }
         @media (max-width: 860px) {
-            .sidebar { transform: translateX(-100%); }
+            .sidebar { transform: translateX(-100%); width: 260px; box-shadow: var(--shadow-lg); }
+            .sidebar.mobile-open { transform: translateX(0); }
+            .sidebar-close-btn { display: block; }
+            .mobile-hamburger { display: inline-flex; }
             .main-wrapper { margin-left: 0; }
+            .analytics-grid { grid-template-columns: 1fr; }
+            .kpi-grid { grid-template-columns: 1fr 1fr; }
+        }
+        @media (max-width: 600px) {
+            .top-header { padding: 0.5rem 0.65rem; flex-wrap: wrap; }
+            .header-left-group { width: 100%; justify-content: space-between; }
+            .header-actions { width: 100%; justify-content: flex-end; padding-top: 0.35rem; border-top: 1px solid var(--border-color); }
+            .content-area { padding: 0.65rem; }
+            .form-grid { grid-template-columns: 1fr; }
+            .media-gallery-grid { grid-template-columns: repeat(2, 1fr); gap: 0.5rem; }
         }
     </style>
 </head>
 <body>
     <div class="app-container">
+        <!-- Mobile Sidebar Backdrop Overlay -->
+        <div class="sidebar-overlay" id="sidebarBackdrop" onclick="toggleMobileSidebar(false)"></div>
+        <!-- Sidebar Navigation Drawer -->
         <aside class="sidebar" id="appSidebar">
             <div class="brand">
-                <div style="display:flex; align-items:center; gap:0.65rem;">
-                    <div class="brand-logo">OP</div>
+                <div class="brand-header-wrap">
+                    <div class="brand-logo">DP</div>
                     <div>
-                        <div class="brand-text">OpsPlanner</div>
-                        <div class="brand-subtitle">Activity & Reporting</div>
+                        <div class="brand-text">Daily Planner</div>
+                        <div class="brand-subtitle">Activity & Reporting Portal</div>
                     </div>
                 </div>
+                <button class="sidebar-close-btn" onclick="toggleMobileSidebar(false)" aria-label="Close navigation">✕</button>
             </div>
             <ul class="nav-list">
-                <li class="nav-item active"><button onclick="switchTab('planner')"><span>📅</span> Daily Activities</button></li>
-                <li class="nav-item"><button onclick="switchTab('reports')"><span>📝</span> Activity Reports</button></li>
-                <li class="nav-item"><button onclick="switchTab('analytics')"><span>📊</span> KPI Metrics</button></li>
+                <li class="nav-item active" data-tab="planner">
+                    <button onclick="switchTab('planner')">
+                        <span class="nav-icon" id="navIconPlanner"></span>
+                        <span class="nav-text">Daily Activities</span>
+                    </button>
+                </li>
+                <li class="nav-item" data-tab="calendar">
+                    <button onclick="switchTab('calendar')">
+                        <span class="nav-icon" id="navIconCalendar"></span>
+                        <span class="nav-text">Schedule Matrix</span>
+                    </button>
+                </li>
+                <li class="nav-item" data-tab="media">
+                    <button onclick="switchTab('media')">
+                        <span class="nav-icon" id="navIconMedia"></span>
+                        <span class="nav-text">Media Library</span>
+                    </button>
+                </li>
+                <li class="nav-item" data-tab="reports">
+                    <button onclick="switchTab('reports')">
+                        <span class="nav-icon" id="navIconReports"></span>
+                        <span class="nav-text">Activity Reports</span>
+                    </button>
+                </li>
+                <li class="nav-item" data-tab="analytics">
+                    <button onclick="switchTab('analytics')">
+                        <span class="nav-icon" id="navIconAnalytics"></span>
+                        <span class="nav-text">KPI Metrics</span>
+                    </button>
+                </li>
+                <li class="nav-item" data-tab="settings" id="navSettingsItem">
+                    <button onclick="switchTab('settings')">
+                        <span class="nav-icon" id="navIconSettings"></span>
+                        <span class="nav-text">Profile & Settings</span>
+                    </button>
+                </li>
             </ul>
+            <div class="sidebar-footer">
+                <div class="user-card">
+                    <div class="user-avatar" id="sidebarAvatar">ME</div>
+                    <div class="user-info">
+                        <div class="user-name" id="sidebarUserName">Planner User</div>
+                        <div class="user-role" id="sidebarUserRole">Local Officer</div>
+                    </div>
+                </div>
+                <button class="auth-toggle-btn" id="authActionButton" onclick="handleAuthButtonClick()">
+                    <span id="authBtnIcon"></span> <span id="authBtnText">Cloud Login</span>
+                </button>
+            </div>
         </aside>
 
+        <!-- Main Wrapper -->
         <main class="main-wrapper">
-            <div class="mode-banner">
+            <div id="guestModeBanner" class="mode-banner" style="display:flex;">
                 <span>⚡ Running in <strong>Local Client & Guest Mode</strong> (Zero Cloud Keys Exposed)</span>
             </div>
 
+            <!-- Offline Banner -->
+            <div id="offlineBanner" class="offline-banner">
+                <span class="offline-dot"></span>
+                <span>You are offline. Changes will save locally and sync upon reconnect.</span>
+                <span id="pendingSyncCount" class="sync-badge" style="display:none;">0</span>
+            </div>
+
+            <!-- Top Header -->
             <header class="top-header">
-                <div>
-                    <h1 class="header-title" id="pageTitle">Daily Operations Planner</h1>
-                    <div class="date-navigator">
-                        <button class="date-btn" onclick="changeDate(-1)">◀</button>
-                        <input type="date" id="selectedDateInput" class="current-date-input" onchange="onDateChange(this.value)">
-                        <button class="date-btn" onclick="changeDate(1)">▶</button>
+                <div class="header-left-group">
+                    <button class="mobile-hamburger" onclick="toggleMobileSidebar(true)" aria-label="Open Navigation">☰</button>
+                    <div class="header-title-area">
+                        <h1 class="header-title" id="pageTitle">Daily Activities</h1>
+                        <div class="date-navigator" id="headerDateNavigator">
+                            <button class="date-btn" onclick="changeSelectedDate(-1)">◀</button>
+                            <input type="date" id="selectedDateInput" class="current-date-input" onchange="onDateInputChange(this.value)">
+                            <button class="date-btn" onclick="changeSelectedDate(1)">▶</button>
+                            <button class="btn btn-secondary btn-sm" onclick="setTodayDate()">Today</button>
+                        </div>
                     </div>
                 </div>
-                <div>
-                    <button class="btn btn-secondary btn-sm" onclick="toggleDarkMode()">🌓 Mode</button>
-                    <button class="btn btn-primary btn-sm" onclick="promptNewTask()">+ New Entry</button>
-                    <button class="btn btn-secondary btn-sm" onclick="generateReport()">📄 Memo</button>
+                <div class="header-actions">
+                    <span id="saveStatusIndicator" class="save-status-indicator">💾 Saved</span>
+                    <button class="btn btn-secondary btn-sm" id="themeToggleBtn" onclick="toggleDarkMode()">🌓</button>
+                    <button class="btn btn-secondary btn-sm" onclick="openTemplateModal()">⚡ Template</button>
+                    <button class="btn btn-secondary btn-sm" onclick="openGenerateReportModal()">📝 Report</button>
+                    <button class="btn btn-primary btn-sm" onclick="openTaskModal()">+ New Activity</button>
                 </div>
             </header>
 
+            <!-- Main Content Views -->
             <div class="content-area">
-                <div class="kpi-grid">
-                    <div class="kpi-card"><div><div class="kpi-info-title">Total Tasks</div><div class="kpi-value" id="kpiTotal">0</div></div></div>
-                    <div class="kpi-card"><div><div class="kpi-info-title">Completed</div><div class="kpi-value" id="kpiDone" style="color:var(--success)">0</div></div></div>
-                    <div class="kpi-card"><div><div class="kpi-info-title">Pending</div><div class="kpi-value" id="kpiPending" style="color:var(--warning)">0</div></div></div>
-                    <div class="kpi-card"><div><div class="kpi-info-title">Expenses</div><div class="kpi-value" id="kpiExpense">RM 0.00</div></div></div>
-                </div>
-
-                <div class="controls-bar">
-                    <div class="search-box">
-                        <input type="text" id="taskSearchInput" placeholder="Filter by keyword, client, or location..." oninput="renderTasks()">
+                <!-- TAB 1: PLANNER -->
+                <section id="tab-planner" class="tab-view active">
+                    <div class="kpi-grid">
+                        <div class="kpi-card"><div><div class="kpi-info-title">Planned</div><div class="kpi-value" id="kpiTotalTasks">0</div><div class="kpi-subtext">Logged items</div></div><div class="kpi-icon blue" id="kpiIcon1"></div></div>
+                        <div class="kpi-card"><div><div class="kpi-info-title">Done</div><div class="kpi-value" id="kpiCompletedTasks">0</div><div class="kpi-subtext" id="kpiCompletedRate">0% Rate</div></div><div class="kpi-icon green" id="kpiIcon2"></div></div>
+                        <div class="kpi-card"><div><div class="kpi-info-title">Pending</div><div class="kpi-value" id="kpiPendingTasks">0</div><div class="kpi-subtext">Action req.</div></div><div class="kpi-icon amber" id="kpiIcon3"></div></div>
+                        <div class="kpi-card"><div><div class="kpi-info-title">Expenses</div><div class="kpi-value" id="kpiTotalExpense">RM 0.00</div><div class="kpi-subtext">Operational Spend</div></div><div class="kpi-icon purple" id="kpiIcon4"></div></div>
                     </div>
-                </div>
 
-                <div id="taskListContainer"></div>
-
-                <div id="reportSection" style="margin-top:1.5rem; display:none;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
-                        <h2 style="font-size:0.9rem; font-weight:700;">Daily Executive Memo</h2>
-                        <button class="btn btn-primary btn-sm" onclick="downloadPDF()">Download PDF</button>
+                    <div class="controls-bar">
+                        <div class="search-box">
+                            <span class="search-icon" id="searchBoxIcon">🔍</span>
+                            <input type="text" id="taskSearchInput" placeholder="Filter by keyword, client, or venue…" oninput="renderTaskList()">
+                        </div>
+                        <div class="filter-group">
+                            <select id="categoryFilter" class="filter-select" onchange="renderTaskList()">
+                                <option value="ALL">All Categories</option>
+                                <option value="Social Media">Social Media</option>
+                                <option value="Client Visit">Client Visit</option>
+                                <option value="Lead Generation">Lead Gen</option>
+                                <option value="Content Creation">Content</option>
+                                <option value="Event/Promo">Event/Promo</option>
+                                <option value="Market Research">Research</option>
+                                <option value="Administrative">Admin</option>
+                            </select>
+                            <select id="statusFilter" class="filter-select" onchange="renderTaskList()">
+                                <option value="ALL">All Status</option>
+                                <option value="Pending">Pending</option>
+                                <option value="In Progress">In Progress</option>
+                                <option value="Completed">Completed</option>
+                                <option value="Postponed">Postponed</option>
+                            </select>
+                            <select id="priorityFilter" class="filter-select" onchange="renderTaskList()">
+                                <option value="ALL">All Priority</option>
+                                <option value="High">High</option>
+                                <option value="Medium">Medium</option>
+                                <option value="Low">Low</option>
+                            </select>
+                        </div>
                     </div>
-                    <div class="report-paper" id="reportOutput"></div>
-                </div>
+
+                    <div id="taskListContainer" class="task-list-container"></div>
+                </section>
+
+                <!-- TAB 2: CALENDAR -->
+                <section id="tab-calendar" class="tab-view">
+                    <div class="calendar-container">
+                        <div class="calendar-header">
+                            <h2 class="calendar-title" id="calendarMonthTitle">Month Year</h2>
+                            <div style="display:flex; gap:0.4rem;">
+                                <button class="btn btn-secondary btn-sm" onclick="changeCalendarMonth(-1)">◀</button>
+                                <button class="btn btn-secondary btn-sm" onclick="changeCalendarMonth(1)">▶</button>
+                            </div>
+                        </div>
+                        <div class="calendar-grid">
+                            <div class="calendar-day-head">Su</div><div class="calendar-day-head">Mo</div><div class="calendar-day-head">Tu</div><div class="calendar-day-head">We</div><div class="calendar-day-head">Th</div><div class="calendar-day-head">Fr</div><div class="calendar-day-head">Sa</div>
+                        </div>
+                        <div class="calendar-grid" id="calendarGridDays" style="margin-top: 0.35rem;"></div>
+                    </div>
+                </section>
+
+                <!-- TAB 3: MEDIA LIBRARY -->
+                <section id="tab-media" class="tab-view">
+                    <div class="section-header">
+                        <div>
+                            <h2 class="section-title">Media Gallery</h2>
+                            <p class="section-desc">Inspect receipts & field verification photos.</p>
+                        </div>
+                    </div>
+                    <div id="mediaGalleryContainer" class="media-gallery-grid"></div>
+                </section>
+
+                <!-- TAB 4: REPORTS -->
+                <section id="tab-reports" class="tab-view">
+                    <div class="section-header">
+                        <div>
+                            <h2 class="section-title">Archived Reports</h2>
+                            <p class="section-desc">Access or export saved activity memos.</p>
+                        </div>
+                        <div style="display:flex; gap:0.4rem;">
+                            <input type="date" id="specificReportDateInput" class="form-control" style="width:auto;">
+                            <button class="btn btn-primary btn-sm" onclick="generateSpecificReport()">Generate</button>
+                        </div>
+                    </div>
+                    <div id="reportHistoryContainer" class="report-history-grid"></div>
+                </section>
+
+                <!-- TAB 5: ANALYTICS -->
+                <section id="tab-analytics" class="tab-view">
+                    <div class="kpi-controls-bar">
+                        <div style="display:flex; align-items:center; gap:0.35rem;">
+                            <span style="font-size:0.7rem; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Scope:</span>
+                            <div style="display:inline-flex; background:var(--bg-main); border:1px solid var(--border-color); border-radius:var(--radius-sm); padding:0.05rem;">
+                                <button class="kpi-scope-btn active" id="analyticsBtnDaily" onclick="setAnalyticsScope('daily')">Day</button>
+                                <button class="kpi-scope-btn" id="analyticsBtnWeekly" onclick="setAnalyticsScope('weekly')">Week</button>
+                                <button class="kpi-scope-btn" id="analyticsBtnMonthly" onclick="setAnalyticsScope('monthly')">Month</button>
+                            </div>
+                        </div>
+                        <div id="analyticsRangeText" style="font-size:0.7rem; font-weight:600; color:var(--text-muted);">Anchor Date</div>
+                    </div>
+                    <div class="analytics-grid">
+                        <div class="chart-card"><h3 class="chart-title">Category Breakdown</h3><div id="categoryChartContainer"></div></div>
+                        <div class="chart-card"><h3 class="chart-title">Status Distribution</h3><div id="statusChartContainer"></div></div>
+                    </div>
+                </section>
+
+                <!-- TAB 6: SETTINGS -->
+                <section id="tab-settings" class="tab-view">
+                    <div class="chart-card" style="max-width: 480px; margin: 0 auto;">
+                        <h3 class="chart-title">Officer Credentials & Profile</h3>
+                        <div class="form-group"><label class="form-label">Full Name</label><input type="text" id="settingFullName" class="form-control" value="Lead Operations Officer"></div>
+                        <div class="form-group"><label class="form-label">Job Title / Designation</label><input type="text" id="settingJobTitle" class="form-control" value="Operations Lead"></div>
+                        <div class="form-group"><label class="form-label">Company Name</label><input type="text" id="settingCompanyName" class="form-control" value="Daily Planner Global"></div>
+                        <button class="btn btn-primary" style="width: 100%; margin-top: 0.6rem;" onclick="saveUserProfileSettings()">Save Profile Details</button>
+                    </div>
+                </section>
             </div>
         </main>
     </div>
 
+    <!-- Modals -->
+    <div class="modal-overlay" id="taskModal">
+        <div class="modal-container">
+            <div class="modal-header"><h3 class="modal-title" id="taskModalTitle">Activity Entry</h3><button class="icon-btn" onclick="closeModal('taskModal')">✕</button></div>
+            <div class="modal-body">
+                <form id="taskForm" onsubmit="handleTaskFormSubmit(event)">
+                    <input type="hidden" id="taskId">
+                    <div class="form-group full-width"><label class="form-label">Activity Description: *</label><input type="text" id="taskTitleInput" class="form-control" placeholder="e.g. Conduct On-site Logistics Review" required></div>
+                    <div class="form-grid">
+                        <div class="form-group"><label class="form-label">Category</label><select id="taskCategoryInput" class="form-control"><option value="Administrative">Administrative</option><option value="Client Visit">Client Visit</option><option value="Social Media">Social Media</option><option value="Lead Generation">Lead Generation</option><option value="Content Creation">Content Creation</option><option value="Event/Promo">Event/Promo</option><option value="Market Research">Market Research</option></select></div>
+                        <div class="form-group"><label class="form-label">Priority</label><select id="taskPriorityInput" class="form-control"><option value="Medium">Medium</option><option value="High">High</option><option value="Low">Low</option></select></div>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group"><label class="form-label">Status</label><select id="taskStatusInput" class="form-control"><option value="Pending">Pending</option><option value="In Progress">In Progress</option><option value="Completed">Completed</option><option value="Postponed">Postponed</option></select></div>
+                        <div class="form-group"><label class="form-label">Scheduled Time</label><input type="time" id="taskTimeInput" class="form-control" value="10:00"></div>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group"><label class="form-label">Client / Partner</label><input type="text" id="taskClientInput" class="form-control" placeholder="e.g. Apex Distribution"></div>
+                        <div class="form-group"><label class="form-label">Location / Venue</label><input type="text" id="taskLocationInput" class="form-control" placeholder="e.g. Hub Facility"></div>
+                    </div>
+                    <div class="form-group full-width"><label class="form-label">Expense / Spend (RM)</label><input type="number" step="0.01" min="0" id="taskExpenseInput" class="form-control" placeholder="0.00"></div>
+                    <div class="form-group full-width"><label class="form-label">Outcomes & Notes</label><textarea id="taskNotesInput" class="form-control" placeholder="Record key results or takeaways..."></textarea></div>
+                    <button type="submit" id="taskFormSubmitBtn" style="display:none;"></button>
+                </form>
+            </div>
+            <div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal('taskModal')">Cancel</button><button class="btn btn-primary" onclick="document.getElementById('taskFormSubmitBtn').click()">Save Entry</button></div>
+        </div>
+    </div>
+
+    <!-- Report Modal -->
+    <div class="modal-overlay" id="reportModal">
+        <div class="modal-container" style="max-width: 600px;">
+            <div class="modal-header"><h3 class="modal-title">Activity Memo</h3><button class="icon-btn" onclick="closeModal('reportModal')">✕</button></div>
+            <div class="modal-body">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.6rem;">
+                    <span style="font-size:0.75rem; font-weight:600; color:var(--text-muted);" id="reportDateSubtitle">Date</span>
+                    <div style="display:flex; gap:0.25rem;">
+                        <button class="btn btn-secondary btn-sm" onclick="copyReportToClipboard()">Copy</button>
+                        <button class="btn btn-primary btn-sm" onclick="downloadReportAsPDF()">Download PDF</button>
+                    </div>
+                </div>
+                <div class="report-paper" id="reportTextContent"></div>
+            </div>
+            <div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal('reportModal')">Close</button><button class="btn btn-success" onclick="saveReportToHistory()">Archive Memo</button></div>
+        </div>
+    </div>
+
+    <!-- Lightbox Modal -->
+    <div class="modal-overlay" id="lightboxModal" onclick="closeModal('lightboxModal')">
+        <div style="max-width: 95vw; max-height: 90vh;"><img id="lightboxImg" src="" alt="Proof enlarged" style="max-width:100%; max-height:85vh; border-radius:var(--radius-sm);"></div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div class="toast-container" id="toastContainer"></div>
+
     <script>
         // ==========================================
-        // SANITIZED CONFIGURATION PLACEHOLDERS
+        // SANITIZED CONFIGURATION (PUBLIC PLACEHOLDERS)
         // ==========================================
-        // For production, insert your project keys or read from environment variables.
-        const SUPABASE_URL = window.ENV_SUPABASE_URL || 'https://YOUR_PROJECT_ID.supabase.co';
-        const SUPABASE_ANON_KEY = window.ENV_SUPABASE_ANON_KEY || 'YOUR_SUPABASE_ANON_KEY_HERE';
+        const SUPABASE_URL = 'https://YOUR_PROJECT_ID.supabase.co';
+        const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY_HERE';
+        
+        let supabaseClient = null;
+        try {
+            if (window.supabase && SUPABASE_URL !== 'https://YOUR_PROJECT_ID.supabase.co') {
+                supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            }
+        } catch (e) {
+            console.log('Running in local offline mode');
+        }
 
-        // Local state management
-        let state = {
+        let appState = {
             selectedDate: new Date().toISOString().split('T')[0],
-            tasks: JSON.parse(localStorage.getItem('ops_planner_tasks') || '[]')
+            analyticsScope: 'daily',
+            currentTab: 'planner',
+            calendarMonth: new Date().getMonth(),
+            calendarYear: new Date().getFullYear(),
+            tasks: JSON.parse(localStorage.getItem('daily_planner_tasks') || '[]'),
+            reports: JSON.parse(localStorage.getItem('daily_planner_reports') || '[]'),
+            templates: [
+                { id: 'tpl_default', name: 'Standard Operations Routine', tasks: [{ title: 'Daily Logistics Briefing', category: 'Administrative', priority: 'High', time: '09:00', client: 'Operations Team', location: 'Main Hub', expense: 0, notes: 'Morning operational check.' }] }
+            ],
+            currentUser: null
         };
 
-        // Initialize sample demo task if empty
-        if (state.tasks.length === 0) {
-            state.tasks = [
-                { id: '1', date: state.selectedDate, title: 'Operational Logistics Review', category: 'Administrative', priority: 'High', status: 'Completed', expense: 45.00, client: 'Regional Distribution Hub', notes: 'Verified weekly cargo throughput schedule.' },
-                { id: '2', date: state.selectedDate, title: 'Client Site Inspection', category: 'Client Visit', priority: 'Medium', status: 'Pending', expense: 120.00, client: 'Apex Logistics Sdn Bhd', notes: 'On-site facility assessment.' }
+        if (appState.tasks.length === 0) {
+            appState.tasks = [
+                { id: '1', date: appState.selectedDate, title: 'Morning Route Inspection', category: 'Administrative', priority: 'High', status: 'Completed', time: '08:30', client: 'Operations Team', location: 'Hub A', expense: 25.0, notes: 'Completed vehicle schedule dispatch.' },
+                { id: '2', date: appState.selectedDate, title: 'Client Logistics Audit', category: 'Client Visit', priority: 'Medium', status: 'Pending', time: '11:00', client: 'Apex Freight', location: 'Terminal 2', expense: 75.0, notes: 'Review weekly turnover rate.' }
             ];
-            saveLocal();
+            saveLocalTasks();
         }
 
-        function saveLocal() {
-            localStorage.setItem('ops_planner_tasks', JSON.stringify(state.tasks));
+        function saveLocalTasks() {
+            localStorage.setItem('daily_planner_tasks', JSON.stringify(appState.tasks));
         }
 
-        function changeDate(days) {
-            const cur = new Date(state.selectedDate);
+        function saveLocalReports() {
+            localStorage.setItem('daily_planner_reports', JSON.stringify(appState.reports));
+        }
+
+        function renderDashboard() {
+            renderKPIs();
+            renderTaskList();
+            if (appState.currentTab === 'analytics') renderAnalytics();
+        }
+
+        function renderKPIs() {
+            const dateTasks = appState.tasks.filter(t => t.date === appState.selectedDate);
+            const total = dateTasks.length;
+            const completed = dateTasks.filter(t => t.status === 'Completed').length;
+            const pending = dateTasks.filter(t => t.status !== 'Completed').length;
+            const rate = total > 0 ? Math.round((completed / total) * 100) : 0;
+            const totalExpense = dateTasks.reduce((acc, t) => acc + (parseFloat(t.expense) || 0), 0);
+
+            document.getElementById('kpiTotalTasks').textContent = total;
+            document.getElementById('kpiCompletedTasks').textContent = completed;
+            document.getElementById('kpiPendingTasks').textContent = pending;
+            document.getElementById('kpiCompletedRate').textContent = `${rate}% Rate`;
+            document.getElementById('kpiTotalExpense').textContent = `RM ${totalExpense.toFixed(2)}`;
+        }
+
+        function renderTaskList() {
+            const container = document.getElementById('taskListContainer');
+            const search = (document.getElementById('taskSearchInput')?.value || '').toLowerCase().trim();
+            const dateTasks = appState.tasks.filter(t => t.date === appState.selectedDate && (!search || t.title.toLowerCase().includes(search) || (t.client && t.client.toLowerCase().includes(search))));
+
+            if (dateTasks.length === 0) {
+                container.innerHTML = `<div class="empty-state"><div class="empty-icon">📅</div><h3 class="empty-title">No activities recorded</h3><p class="empty-desc">No activities logged for ${appState.selectedDate}.</p></div>`;
+                return;
+            }
+
+            container.innerHTML = dateTasks.map(task => {
+                const isChecked = task.status === 'Completed';
+                return `
+                    <div class="task-card ${task.status.toLowerCase().replace(' ', '-')}">
+                        <div class="task-checkbox ${isChecked ? 'checked' : ''}" onclick="toggleTaskCompletion('${task.id}')">${isChecked ? '✓' : ''}</div>
+                        <div class="task-content-wrap">
+                            <div class="task-main-details">
+                                <div class="task-header-row">
+                                    <span class="task-title">${escapeHtml(task.title)}</span>
+                                    <span class="badge badge-cat">${escapeHtml(task.category)}</span>
+                                    <span class="badge">${task.priority}</span>
+                                    <span class="badge">${task.status}</span>
+                                </div>
+                                <div class="task-meta-row">
+                                    <div class="task-meta-item">🕒 ${task.time || 'All Day'}</div>
+                                    ${task.client ? `<div class="task-meta-item">🏢 ${escapeHtml(task.client)}</div>` : ''}
+                                    ${task.location ? `<div class="task-meta-item">📍 ${escapeHtml(task.location)}</div>` : ''}
+                                    ${task.expense > 0 ? `<div class="task-meta-item" style="color:var(--success); font-weight:600;">RM ${parseFloat(task.expense).toFixed(2)}</div>` : ''}
+                                </div>
+                            </div>
+                            <div class="task-actions">
+                                <button class="icon-btn" onclick="openTaskModal('${task.id}')">✏️</button>
+                                <button class="icon-btn danger" onclick="deleteTask('${task.id}')">🗑️</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function toggleTaskCompletion(taskId) {
+            const task = appState.tasks.find(t => t.id === taskId);
+            if (task) {
+                task.status = task.status === 'Completed' ? 'Pending' : 'Completed';
+                saveLocalTasks();
+                renderDashboard();
+                showToast(`Status updated: ${task.status}`);
+            }
+        }
+
+        function openTaskModal(taskId = null) {
+            document.getElementById('taskForm').reset();
+            if (taskId) {
+                const task = appState.tasks.find(t => t.id === taskId);
+                if (task) {
+                    document.getElementById('taskModalTitle').textContent = 'Edit Activity';
+                    document.getElementById('taskId').value = task.id;
+                    document.getElementById('taskTitleInput').value = task.title;
+                    document.getElementById('taskCategoryInput').value = task.category;
+                    document.getElementById('taskPriorityInput').value = task.priority;
+                    document.getElementById('taskStatusInput').value = task.status;
+                    document.getElementById('taskTimeInput').value = task.time || '10:00';
+                    document.getElementById('taskClientInput').value = task.client || '';
+                    document.getElementById('taskLocationInput').value = task.location || '';
+                    document.getElementById('taskExpenseInput').value = task.expense || '';
+                    document.getElementById('taskNotesInput').value = task.notes || '';
+                }
+            } else {
+                document.getElementById('taskModalTitle').textContent = 'New Activity';
+                document.getElementById('taskId').value = '';
+            }
+            openModal('taskModal');
+        }
+
+        function handleTaskFormSubmit(e) {
+            e.preventDefault();
+            const id = document.getElementById('taskId').value;
+            const title = document.getElementById('taskTitleInput').value.trim();
+            const category = document.getElementById('taskCategoryInput').value;
+            const priority = document.getElementById('taskPriorityInput').value;
+            const status = document.getElementById('taskStatusInput').value;
+            const time = document.getElementById('taskTimeInput').value;
+            const client = document.getElementById('taskClientInput').value.trim();
+            const location = document.getElementById('taskLocationInput').value.trim();
+            const expense = parseFloat(document.getElementById('taskExpenseInput').value) || 0;
+            const notes = document.getElementById('taskNotesInput').value.trim();
+
+            if (!title) return;
+
+            if (id) {
+                const idx = appState.tasks.findIndex(t => t.id === id);
+                if (idx !== -1) {
+                    appState.tasks[idx] = { ...appState.tasks[idx], title, category, priority, status, time, client, location, expense, notes };
+                }
+            } else {
+                appState.tasks.push({ id: 'task_' + Date.now(), date: appState.selectedDate, title, category, priority, status, time, client, location, expense, notes });
+            }
+
+            saveLocalTasks();
+            closeModal('taskModal');
+            renderDashboard();
+            showToast('Activity saved', 'success');
+        }
+
+        function deleteTask(taskId) {
+            if (confirm('Delete this record?')) {
+                appState.tasks = appState.tasks.filter(t => t.id !== taskId);
+                saveLocalTasks();
+                renderDashboard();
+                showToast('Record deleted', 'error');
+            }
+        }
+
+        function openGenerateReportModal() {
+            const dateTasks = appState.tasks.filter(t => t.date === appState.selectedDate);
+            const completed = dateTasks.filter(t => t.status === 'Completed');
+            const totalExpense = dateTasks.reduce((acc, t) => acc + (parseFloat(t.expense) || 0), 0);
+
+            let memo = `DAILY PLANNER & OPERATIONS REPORT\n`;
+            memo += `Date: ${appState.selectedDate}\n`;
+            memo += `Total Planned: ${dateTasks.length} | Completed: ${completed.length} | Total Expense: RM ${totalExpense.toFixed(2)}\n\n`;
+            memo += `---------------------------------------------------------\n`;
+            dateTasks.forEach((t, i) => {
+                memo += `${i + 1}. [${t.status}] ${t.title} (${t.category})\n`;
+                if (t.client) memo += `   - Partner/Venue: ${t.client}\n`;
+                if (t.expense > 0) memo += `   - Expense: RM ${parseFloat(t.expense).toFixed(2)}\n`;
+            });
+            document.getElementById('reportTextContent').textContent = memo;
+            document.getElementById('reportDateSubtitle').textContent = `Report Date: ${appState.selectedDate}`;
+            openModal('reportModal');
+        }
+
+        function downloadReportAsPDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            const text = document.getElementById('reportTextContent').textContent;
+            doc.setFont('courier', 'normal');
+            doc.setFontSize(9);
+            doc.text(doc.splitTextToSize(text, 180), 15, 15);
+            doc.save(`Daily_Planner_Report_${appState.selectedDate}.pdf`);
+            showToast('PDF downloaded', 'success');
+        }
+
+        function saveReportToHistory() {
+            const content = document.getElementById('reportTextContent').textContent;
+            appState.reports.unshift({ id: 'rpt_' + Date.now(), date: appState.selectedDate, createdAt: new Date().toLocaleDateString(), content });
+            saveLocalReports();
+            closeModal('reportModal');
+            showToast('Report archived', 'success');
+        }
+
+        function changeSelectedDate(days) {
+            const cur = new Date(appState.selectedDate);
             cur.setDate(cur.getDate() + days);
-            state.selectedDate = cur.toISOString().split('T')[0];
-            document.getElementById('selectedDateInput').value = state.selectedDate;
-            renderAll();
+            appState.selectedDate = cur.toISOString().split('T')[0];
+            document.getElementById('selectedDateInput').value = appState.selectedDate;
+            renderDashboard();
         }
 
-        function onDateChange(val) {
-            state.selectedDate = val;
-            renderAll();
+        function setTodayDate() {
+            appState.selectedDate = new Date().toISOString().split('T')[0];
+            document.getElementById('selectedDateInput').value = appState.selectedDate;
+            renderDashboard();
+        }
+
+        function onDateInputChange(val) {
+            if (val) {
+                appState.selectedDate = val;
+                renderDashboard();
+            }
+        }
+
+        function switchTab(tabId) {
+            appState.currentTab = tabId;
+            toggleMobileSidebar(false);
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.getAttribute('data-tab') === tabId));
+            document.querySelectorAll('.tab-view').forEach(v => v.classList.remove('active'));
+            document.getElementById(`tab-${tabId}`).classList.add('active');
+        }
+
+        function toggleMobileSidebar(open) {
+            document.getElementById('appSidebar').classList.toggle('mobile-open', open);
+            document.getElementById('sidebarBackdrop').classList.toggle('active', open);
         }
 
         function toggleDarkMode() {
             document.body.classList.toggle('dark-theme');
         }
 
-        function promptNewTask() {
-            const title = prompt("Enter activity title:");
-            if (!title) return;
-            const expense = parseFloat(prompt("Enter expense in RM (e.g., 0.00):") || "0");
-            state.tasks.push({
-                id: Date.now().toString(),
-                date: state.selectedDate,
-                title: title,
-                category: 'Operations',
-                priority: 'Medium',
-                status: 'Pending',
-                expense: expense || 0,
-                client: 'Client / Venue',
-                notes: 'Logged via browser quick entry.'
-            });
-            saveLocal();
-            renderAll();
+        function openModal(id) { document.getElementById(id).classList.add('active'); }
+        function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
+        function showToast(msg, type = 'success') {
+            const c = document.getElementById('toastContainer');
+            const t = document.createElement('div');
+            t.className = `toast ${type}`;
+            t.textContent = msg;
+            c.appendChild(t);
+            setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 200); }, 3000);
         }
 
-        function toggleTask(id) {
-            const t = state.tasks.find(x => x.id === id);
-            if (t) {
-                t.status = t.status === 'Completed' ? 'Pending' : 'Completed';
-                saveLocal();
-                renderAll();
-            }
+        function escapeHtml(str) {
+            return (str || '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m]));
         }
 
-        function renderTasks() {
-            const q = (document.getElementById('taskSearchInput').value || '').toLowerCase();
-            const filtered = state.tasks.filter(t => t.date === state.selectedDate && (t.title.toLowerCase().includes(q) || (t.client && t.client.toLowerCase().includes(q))));
-            const container = document.getElementById('taskListContainer');
-            
-            if (filtered.length === 0) {
-                container.innerHTML = '<div style="padding:1.5rem; text-align:center; color:var(--text-muted); font-size:0.8rem;">No activities recorded for this date.</div>';
-                return;
-            }
-
-            container.innerHTML = filtered.map(t => `
-                <div class="task-card" style="border-left: 3px solid ${t.status === 'Completed' ? 'var(--success)' : 'var(--warning)'};">
-                    <input type="checkbox" ${t.status === 'Completed' ? 'checked' : ''} onclick="toggleTask('${t.id}')" style="cursor:pointer; margin-top:2px;">
-                    <div style="flex:1;">
-                        <div class="task-title" style="${t.status === 'Completed' ? 'text-decoration:line-through; color:var(--text-muted);' : ''}">${t.title}</div>
-                        <div style="font-size:0.7rem; color:var(--text-muted); margin-top:0.2rem;">
-                            Partner: <strong>${t.client}</strong> | Expense: <strong>RM ${t.expense.toFixed(2)}</strong> | Status: <strong>${t.status}</strong>
-                        </div>
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        function renderKPIs() {
-            const dTasks = state.tasks.filter(t => t.date === state.selectedDate);
-            const total = dTasks.length;
-            const completed = dTasks.filter(t => t.status === 'Completed').length;
-            const pending = total - completed;
-            const expense = dTasks.reduce((sum, t) => sum + (t.expense || 0), 0);
-
-            document.getElementById('kpiTotal').innerText = total;
-            document.getElementById('kpiDone').innerText = completed;
-            document.getElementById('kpiPending').innerText = pending;
-            document.getElementById('kpiExpense').innerText = 'RM ' + expense.toFixed(2);
-        }
-
-        function generateReport() {
-            const dTasks = state.tasks.filter(t => t.date === state.selectedDate);
-            const completed = dTasks.filter(t => t.status === 'Completed');
-            const totalExpense = dTasks.reduce((sum, t) => sum + (t.expense || 0), 0);
-            
-            let text = `========================================================\n`;
-            text += `DAILY ACTIVITY & OPERATIONS MEMORANDUM\n`;
-            text += `Date: ${state.selectedDate} | Status: Generated\n`;
-            text += `========================================================\n\n`;
-            text += `1. METRICS SUMMARY\n`;
-            text += `   - Total Activities Planned  : ${dTasks.length}\n`;
-            text += `   - Activities Completed      : ${completed.length}\n`;
-            text += `   - Total Operational Expense : RM ${totalExpense.toFixed(2)}\n\n`;
-            text += `2. LOGGED ITEMS\n`;
-            dTasks.forEach((t, idx) => {
-                text += `   ${idx + 1}. [${t.status.toUpperCase()}] ${t.title} (RM ${t.expense.toFixed(2)})\n`;
-                if (t.client) text += `      Target/Location: ${t.client}\n`;
-            });
-            text += `\n========================================================\n`;
-            
-            document.getElementById('reportOutput').innerText = text;
-            document.getElementById('reportSection').style.display = 'block';
-        }
-
-        function downloadPDF() {
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF();
-            const text = document.getElementById('reportOutput').innerText;
-            doc.setFont('courier', 'normal');
-            doc.setFontSize(9);
-            doc.text(doc.splitTextToSize(text, 180), 15, 15);
-            doc.save(`Operations_Memo_${state.selectedDate}.pdf`);
-        }
-
-        function switchTab(tab) {
-            if (tab === 'reports') generateReport();
-            if (tab === 'planner') document.getElementById('reportSection').style.display = 'none';
-        }
-
-        function renderAll() {
-            document.getElementById('selectedDateInput').value = state.selectedDate;
-            renderKPIs();
-            renderTasks();
-        }
-
-        window.onload = renderAll;
+        window.onload = function() {
+            document.getElementById('selectedDateInput').value = appState.selectedDate;
+            renderDashboard();
+        };
     </script>
 </body>
 </html>
