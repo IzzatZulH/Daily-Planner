@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#0b1120" media="(prefers-color-scheme: dark)">
+    <title>Daily Planner & Activity Report</title>
+    <!-- Supabase SDK for Cloud Database & Auth -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- jsPDF for Client-Side PDF Export -->
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --primary-light: #eff6ff;
+            --secondary: #475569;
+            --success: #059669;
+            --success-light: #ecfdf5;
+            --warning: #d97706;
+            --warning-light: #fffbeb;
+            --danger: #dc2626;
+            --danger-light: #fef2f2;
+            --info: #2563eb;
+            --info-light: #eff6ff;
+            --bg-main: #f8fafc;
+            --bg-card: #ffffff;
+            --bg-sidebar: #0f172a;
+            --text-sidebar: #cbd5e1;
+            --text-sidebar-active: #ffffff;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --border-color: #e2e8f0;
+            --border-hover: #94a3b8;
+            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+            --shadow-md: 0 2px 8px -2px rgb(0 0 0 / 0.08);
+            --shadow-lg: 0 8px 24px -4px rgb(0 0 0 / 0.12);
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --radius-lg: 14px;
+        }
+        body.dark-theme {
+            --bg-main: #0b1120;
+            --bg-card: #131c31;
+            --bg-sidebar: #050a14;
+            --text-sidebar: #94a3b8;
+            --text-sidebar-active: #ffffff;
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+            --border-color: #1e293b;
+            --border-hover: #334155;
+            --primary-light: rgba(37, 99, 235, 0.25);
+            --success-light: rgba(5, 150, 105, 0.25);
+            --warning-light: rgba(217, 119, 6, 0.25);
+            --danger-light: rgba(220, 38, 38, 0.25);
+            --info-light: rgba(37, 99, 235, 0.25);
+            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+            --shadow-md: 0 2px 8px -2px rgb(0 0 0 / 0.4);
+            --shadow-lg: 0 8px 24px -4px rgb(0 0 0 / 0.5);
+        }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; -webkit-text-size-adjust: 100%; -webkit-font-smoothing: antialiased; }
+        body { background-color: var(--bg-main); color: var(--text-main); display: flex; min-height: 100vh; line-height: 1.5; transition: background-color 0.2s ease, color 0.2s ease; }
+        button, input, select, textarea { font-family: inherit; font-size: inherit; }
+        .app-container { display: flex; width: 100%; min-height: 100vh; position: relative; }
+        .sidebar { width: 250px; background-color: var(--bg-sidebar); color: var(--text-sidebar); display: flex; flex-direction: column; padding: 1rem 0.75rem; position: fixed; height: 100vh; z-index: 50; transition: transform 0.25s ease; border-right: 1px solid rgba(255, 255, 255, 0.06); }
+        .brand { display: flex; align-items: center; justify-content: space-between; padding: 0 0.25rem 1.15rem 0.25rem; border-bottom: 1px solid rgba(255, 255, 255, 0.1); margin-bottom: 1rem; }
+        .brand-logo { width: 32px; height: 32px; background: var(--primary); border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 0.85rem; }
+        .brand-text { font-size: 0.88rem; font-weight: 700; color: white; }
+        .brand-subtitle { font-size: 0.58rem; color: var(--text-sidebar); text-transform: uppercase; }
+        .nav-list { list-style: none; display: flex; flex-direction: column; gap: 0.35rem; flex: 1; }
+        .nav-item button { width: 100%; display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.7rem; border-radius: var(--radius-sm); border: none; background: transparent; color: var(--text-sidebar); font-size: 0.82rem; font-weight: 500; cursor: pointer; text-align: left; }
+        .nav-item.active button { background-color: var(--primary); color: white; font-weight: 600; }
+        .main-wrapper { margin-left: 250px; flex: 1; display: flex; flex-direction: column; min-width: 0; width: 100%; }
+        .top-header { background-color: var(--bg-card); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 0.6rem 1rem; position: sticky; top: 0; z-index: 30; }
+        .header-title { font-size: 1rem; font-weight: 700; color: var(--text-main); }
+        .date-navigator { display: inline-flex; align-items: center; gap: 0.15rem; background: var(--bg-main); padding: 0.15rem 0.25rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); }
+        .date-btn { background: none; border: none; width: 28px; height: 28px; border-radius: var(--radius-sm); cursor: pointer; color: var(--text-muted); font-size: 0.75rem; }
+        .current-date-input { border: none; background: transparent; font-weight: 600; font-size: 0.8rem; color: var(--text-main); cursor: pointer; outline: none; }
+        .btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; padding: 0.45rem 0.75rem; border-radius: var(--radius-sm); font-size: 0.8rem; font-weight: 600; cursor: pointer; border: 1px solid transparent; min-height: 34px; }
+        .btn-primary { background-color: var(--primary); color: white; }
+        .btn-secondary { background-color: var(--bg-card); border-color: var(--border-color); color: var(--text-main); }
+        .btn-sm { padding: 0.3rem 0.55rem; font-size: 0.72rem; min-height: 28px; }
+        .content-area { padding: 1rem; flex: 1; }
+        .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.65rem; margin-bottom: 1rem; }
+        .kpi-card { background: var(--bg-card); border-radius: var(--radius-md); padding: 0.8rem 0.9rem; border: 1px solid var(--border-color); box-shadow: var(--shadow-sm); display: flex; align-items: center; justify-content: space-between; }
+        .kpi-info-title { font-size: 0.68rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; }
+        .kpi-value { font-size: 1.2rem; font-weight: 700; }
+        .controls-bar { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 0.65rem; margin-bottom: 0.85rem; display: flex; flex-direction: column; gap: 0.5rem; }
+        .search-box input { width: 100%; padding: 0.5rem 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background-color: var(--bg-card); color: var(--text-main); font-size: 0.82rem; outline: none; }
+        .task-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 0.7rem 0.85rem; display: flex; gap: 0.65rem; margin-bottom: 0.5rem; }
+        .task-title { font-size: 0.85rem; font-weight: 600; }
+        .report-paper { background: #ffffff; border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 1rem; font-family: monospace; font-size: 0.75rem; line-height: 1.5; white-space: pre-wrap; max-height: 40vh; overflow-y: auto; }
+        body.dark-theme .report-paper { background: #0b1120; color: #f1f5f9; }
+        .mode-banner { background: var(--info-light); border-bottom: 1px solid var(--border-color); color: var(--primary); padding: 0.4rem 1rem; font-size: 0.72rem; font-weight: 600; display: flex; justify-content: space-between; }
+        @media (max-width: 860px) {
+            .sidebar { transform: translateX(-100%); }
+            .main-wrapper { margin-left: 0; }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <aside class="sidebar" id="appSidebar">
+            <div class="brand">
+                <div style="display:flex; align-items:center; gap:0.65rem;">
+                    <div class="brand-logo">OP</div>
+                    <div>
+                        <div class="brand-text">OpsPlanner</div>
+                        <div class="brand-subtitle">Activity & Reporting</div>
+                    </div>
+                </div>
+            </div>
+            <ul class="nav-list">
+                <li class="nav-item active"><button onclick="switchTab('planner')"><span>📅</span> Daily Activities</button></li>
+                <li class="nav-item"><button onclick="switchTab('reports')"><span>📝</span> Activity Reports</button></li>
+                <li class="nav-item"><button onclick="switchTab('analytics')"><span>📊</span> KPI Metrics</button></li>
+            </ul>
+        </aside>
+
+        <main class="main-wrapper">
+            <div class="mode-banner">
+                <span>⚡ Running in <strong>Local Client & Guest Mode</strong> (Zero Cloud Keys Exposed)</span>
+            </div>
+
+            <header class="top-header">
+                <div>
+                    <h1 class="header-title" id="pageTitle">Daily Operations Planner</h1>
+                    <div class="date-navigator">
+                        <button class="date-btn" onclick="changeDate(-1)">◀</button>
+                        <input type="date" id="selectedDateInput" class="current-date-input" onchange="onDateChange(this.value)">
+                        <button class="date-btn" onclick="changeDate(1)">▶</button>
+                    </div>
+                </div>
+                <div>
+                    <button class="btn btn-secondary btn-sm" onclick="toggleDarkMode()">🌓 Mode</button>
+                    <button class="btn btn-primary btn-sm" onclick="promptNewTask()">+ New Entry</button>
+                    <button class="btn btn-secondary btn-sm" onclick="generateReport()">📄 Memo</button>
+                </div>
+            </header>
+
+            <div class="content-area">
+                <div class="kpi-grid">
+                    <div class="kpi-card"><div><div class="kpi-info-title">Total Tasks</div><div class="kpi-value" id="kpiTotal">0</div></div></div>
+                    <div class="kpi-card"><div><div class="kpi-info-title">Completed</div><div class="kpi-value" id="kpiDone" style="color:var(--success)">0</div></div></div>
+                    <div class="kpi-card"><div><div class="kpi-info-title">Pending</div><div class="kpi-value" id="kpiPending" style="color:var(--warning)">0</div></div></div>
+                    <div class="kpi-card"><div><div class="kpi-info-title">Expenses</div><div class="kpi-value" id="kpiExpense">RM 0.00</div></div></div>
+                </div>
+
+                <div class="controls-bar">
+                    <div class="search-box">
+                        <input type="text" id="taskSearchInput" placeholder="Filter by keyword, client, or location..." oninput="renderTasks()">
+                    </div>
+                </div>
+
+                <div id="taskListContainer"></div>
+
+                <div id="reportSection" style="margin-top:1.5rem; display:none;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                        <h2 style="font-size:0.9rem; font-weight:700;">Daily Executive Memo</h2>
+                        <button class="btn btn-primary btn-sm" onclick="downloadPDF()">Download PDF</button>
+                    </div>
+                    <div class="report-paper" id="reportOutput"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // ==========================================
+        // SANITIZED CONFIGURATION PLACEHOLDERS
+        // ==========================================
+        // For production, insert your project keys or read from environment variables.
+        const SUPABASE_URL = window.ENV_SUPABASE_URL || 'https://YOUR_PROJECT_ID.supabase.co';
+        const SUPABASE_ANON_KEY = window.ENV_SUPABASE_ANON_KEY || 'YOUR_SUPABASE_ANON_KEY_HERE';
+
+        // Local state management
+        let state = {
+            selectedDate: new Date().toISOString().split('T')[0],
+            tasks: JSON.parse(localStorage.getItem('ops_planner_tasks') || '[]')
+        };
+
+        // Initialize sample demo task if empty
+        if (state.tasks.length === 0) {
+            state.tasks = [
+                { id: '1', date: state.selectedDate, title: 'Operational Logistics Review', category: 'Administrative', priority: 'High', status: 'Completed', expense: 45.00, client: 'Regional Distribution Hub', notes: 'Verified weekly cargo throughput schedule.' },
+                { id: '2', date: state.selectedDate, title: 'Client Site Inspection', category: 'Client Visit', priority: 'Medium', status: 'Pending', expense: 120.00, client: 'Apex Logistics Sdn Bhd', notes: 'On-site facility assessment.' }
+            ];
+            saveLocal();
+        }
+
+        function saveLocal() {
+            localStorage.setItem('ops_planner_tasks', JSON.stringify(state.tasks));
+        }
+
+        function changeDate(days) {
+            const cur = new Date(state.selectedDate);
+            cur.setDate(cur.getDate() + days);
+            state.selectedDate = cur.toISOString().split('T')[0];
+            document.getElementById('selectedDateInput').value = state.selectedDate;
+            renderAll();
+        }
+
+        function onDateChange(val) {
+            state.selectedDate = val;
+            renderAll();
+        }
+
+        function toggleDarkMode() {
+            document.body.classList.toggle('dark-theme');
+        }
+
+        function promptNewTask() {
+            const title = prompt("Enter activity title:");
+            if (!title) return;
+            const expense = parseFloat(prompt("Enter expense in RM (e.g., 0.00):") || "0");
+            state.tasks.push({
+                id: Date.now().toString(),
+                date: state.selectedDate,
+                title: title,
+                category: 'Operations',
+                priority: 'Medium',
+                status: 'Pending',
+                expense: expense || 0,
+                client: 'Client / Venue',
+                notes: 'Logged via browser quick entry.'
+            });
+            saveLocal();
+            renderAll();
+        }
+
+        function toggleTask(id) {
+            const t = state.tasks.find(x => x.id === id);
+            if (t) {
+                t.status = t.status === 'Completed' ? 'Pending' : 'Completed';
+                saveLocal();
+                renderAll();
+            }
+        }
+
+        function renderTasks() {
+            const q = (document.getElementById('taskSearchInput').value || '').toLowerCase();
+            const filtered = state.tasks.filter(t => t.date === state.selectedDate && (t.title.toLowerCase().includes(q) || (t.client && t.client.toLowerCase().includes(q))));
+            const container = document.getElementById('taskListContainer');
+            
+            if (filtered.length === 0) {
+                container.innerHTML = '<div style="padding:1.5rem; text-align:center; color:var(--text-muted); font-size:0.8rem;">No activities recorded for this date.</div>';
+                return;
+            }
+
+            container.innerHTML = filtered.map(t => `
+                <div class="task-card" style="border-left: 3px solid ${t.status === 'Completed' ? 'var(--success)' : 'var(--warning)'};">
+                    <input type="checkbox" ${t.status === 'Completed' ? 'checked' : ''} onclick="toggleTask('${t.id}')" style="cursor:pointer; margin-top:2px;">
+                    <div style="flex:1;">
+                        <div class="task-title" style="${t.status === 'Completed' ? 'text-decoration:line-through; color:var(--text-muted);' : ''}">${t.title}</div>
+                        <div style="font-size:0.7rem; color:var(--text-muted); margin-top:0.2rem;">
+                            Partner: <strong>${t.client}</strong> | Expense: <strong>RM ${t.expense.toFixed(2)}</strong> | Status: <strong>${t.status}</strong>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderKPIs() {
+            const dTasks = state.tasks.filter(t => t.date === state.selectedDate);
+            const total = dTasks.length;
+            const completed = dTasks.filter(t => t.status === 'Completed').length;
+            const pending = total - completed;
+            const expense = dTasks.reduce((sum, t) => sum + (t.expense || 0), 0);
+
+            document.getElementById('kpiTotal').innerText = total;
+            document.getElementById('kpiDone').innerText = completed;
+            document.getElementById('kpiPending').innerText = pending;
+            document.getElementById('kpiExpense').innerText = 'RM ' + expense.toFixed(2);
+        }
+
+        function generateReport() {
+            const dTasks = state.tasks.filter(t => t.date === state.selectedDate);
+            const completed = dTasks.filter(t => t.status === 'Completed');
+            const totalExpense = dTasks.reduce((sum, t) => sum + (t.expense || 0), 0);
+            
+            let text = `========================================================\n`;
+            text += `DAILY ACTIVITY & OPERATIONS MEMORANDUM\n`;
+            text += `Date: ${state.selectedDate} | Status: Generated\n`;
+            text += `========================================================\n\n`;
+            text += `1. METRICS SUMMARY\n`;
+            text += `   - Total Activities Planned  : ${dTasks.length}\n`;
+            text += `   - Activities Completed      : ${completed.length}\n`;
+            text += `   - Total Operational Expense : RM ${totalExpense.toFixed(2)}\n\n`;
+            text += `2. LOGGED ITEMS\n`;
+            dTasks.forEach((t, idx) => {
+                text += `   ${idx + 1}. [${t.status.toUpperCase()}] ${t.title} (RM ${t.expense.toFixed(2)})\n`;
+                if (t.client) text += `      Target/Location: ${t.client}\n`;
+            });
+            text += `\n========================================================\n`;
+            
+            document.getElementById('reportOutput').innerText = text;
+            document.getElementById('reportSection').style.display = 'block';
+        }
+
+        function downloadPDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            const text = document.getElementById('reportOutput').innerText;
+            doc.setFont('courier', 'normal');
+            doc.setFontSize(9);
+            doc.text(doc.splitTextToSize(text, 180), 15, 15);
+            doc.save(`Operations_Memo_${state.selectedDate}.pdf`);
+        }
+
+        function switchTab(tab) {
+            if (tab === 'reports') generateReport();
+            if (tab === 'planner') document.getElementById('reportSection').style.display = 'none';
+        }
+
+        function renderAll() {
+            document.getElementById('selectedDateInput').value = state.selectedDate;
+            renderKPIs();
+            renderTasks();
+        }
+
+        window.onload = renderAll;
+    </script>
+</body>
+</html>
